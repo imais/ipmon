@@ -36,7 +36,7 @@ struct timeval g_tv_start, g_tv_end;
 void print_stats(Host *host, double delta_sec) {
     while (host) {
         double data_rate = (double)host->recv_bytes / delta_sec;
-        printf("%s\t%s\t%d\t%.3f\n", host->ip, host->name, host->recv_bytes, data_rate);
+        printf("%s,\t%s,\t%d,\t%.3f\n", host->ip, host->name, host->recv_bytes, data_rate);
         host = host->next;
     }
 }
