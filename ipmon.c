@@ -2,6 +2,9 @@
 #include <stdlib.h>
 #include <netinet/in.h>
 #include <netinet/if_ether.h>
+#include <linux/if_link.h>
+#include <netdb.h>
+#include <ifaddrs.h>
 #include <arpa/inet.h>
 #include <signal.h>
 #include <string.h>
@@ -15,18 +18,20 @@
 #define CAPTURE_DEVICE  "eth0"
 #define TIMEOUT         1000  /* [ms] */
 #define MAX_HOSTS       32
-#define FILTER_LEN      1024
+#define FILTER_LEN      4096
+#define IPADDR_LEN      128
 #define OK              0
 #define ERROR           1
 
 typedef struct Host {
     char ip[16];
     char name[64];
-    int recv_bytes;
+    unsigned long recv_bytes;
     struct Host *next;
 } Host;
 
 /* global variables */
+char g_ipaddr[IPADDR_LEN];
 Host g_hosts[MAX_HOSTS];
 map_t g_hosts_map;
 char g_filter[FILTER_LEN];
@@ -36,7 +41,7 @@ struct timeval g_tv_start, g_tv_end;
 void print_stats(Host *host, double delta_sec) {
     while (host) {
         double data_rate = (double)host->recv_bytes / delta_sec;
-        printf("%s, %s, %d, %.3f\n", host->ip, host->name, host->recv_bytes, data_rate);
+        printf("%s, %s, %lu, %.3f\n", host->ip, host->name, host->recv_bytes, data_rate);
         host = host->next;
     }
 }
@@ -96,6 +101,11 @@ void packet_handler(u_char *args,
 	}
 
     src_ip = inet_ntoa(ip->ip_src);
+
+    /* Ignore packets from my host */
+    if (strcmp(src_ip, g_ipaddr) == 0)
+        return;
+
     packet_len = header->len;
     if (hashmap_get(g_hosts_map, src_ip, (void**)&host) == MAP_OK) {
         host->recv_bytes += packet_len;
@@ -128,6 +138,11 @@ int init_hosts(char *hosts_file, Host hosts[]) {
     int i = 0;
     Host *host = NULL, *prev = NULL;
     while (fgets(buffer, 128, fp) != NULL) {
+        if (buffer[0] == '#') {
+            /* comment line, skip it */
+            continue;
+        }
+
         if (MAX_HOSTS <= i) {
             fprintf(stderr, "init_hosts: Exceeded max hosts %d", i);
             status = ERROR;
@@ -223,6 +238,45 @@ int create_filter(Host *host, char *filter) {
     return status;
 }
 
+int getipaddr(char *ifname, int family,
+              char ipaddr[], int addrlen) {
+    struct ifaddrs *ifaddr, *ifa;
+    int fam, s, n;
+    int status = OK;
+
+    if (getifaddrs(&ifaddr) == -1) {
+        perror("getifaddrs");
+        exit(EXIT_FAILURE);
+    }
+
+    for (ifa = ifaddr, n = 0; ifa != NULL; ifa = ifa->ifa_next, n++) {
+        if (ifa->ifa_addr == NULL)
+            continue;
+
+        fam = ifa->ifa_addr->sa_family;
+
+        if ((strcmp(ifname, ifa->ifa_name) == 0) && (family == fam)) {
+            if (family == AF_INET || family == AF_INET6) {
+                s = getnameinfo(ifa->ifa_addr,
+                                (family == AF_INET) ? sizeof(struct sockaddr_in) :
+                                sizeof(struct sockaddr_in6),
+                                ipaddr, addrlen,
+                                NULL, 0, NI_NUMERICHOST);
+                if (s != 0) {
+                    fprintf(stderr, "getnameinfo() failed: %s\n", gai_strerror(s));
+                    exit(EXIT_FAILURE);
+                }
+                continue;
+            }
+            else {
+                status = ERROR;
+            }
+        }
+    }
+
+    return status;
+}
+
 
 int main(int argc, char *argv[]) {
     char error_buffer[PCAP_ERRBUF_SIZE], *hosts_file;
@@ -242,13 +296,18 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    if (init_hosts(hosts_file, g_hosts) != 0) {
+    if (getipaddr("eth0", AF_INET, g_ipaddr, IPADDR_LEN) != OK) {
+        fprintf(stderr, "Failed to get ip address for eth0\n");
+        exit(EXIT_FAILURE);
+    }
+
+    if (init_hosts(hosts_file, g_hosts) != OK) {
         fprintf(stderr, "Fail to initialize hosts from file %s\n", hosts_file);
         exit(EXIT_FAILURE);
     }
     printf("Started monitoring traffic from the following hosts:\n\n");
     print_hosts(g_hosts);
-    if (create_hosts_map(g_hosts, &g_hosts_map) != 0) {
+    if (create_hosts_map(g_hosts, &g_hosts_map) != OK) {
         fprintf(stderr, "Failed to create hash map\n");
         exit(EXIT_FAILURE);
     }
@@ -262,7 +321,7 @@ int main(int argc, char *argv[]) {
     }
 
     /* create a filter from the hosts file: connecting src hosts with OR conditions */
-    if (create_filter(g_hosts, g_filter) != 0) {
+    if (create_filter(g_hosts, g_filter) != OK) {
         fprintf(stderr, "Failed to create filter\n");
         exit(EXIT_FAILURE);
     }
