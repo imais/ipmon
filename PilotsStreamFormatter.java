@@ -1,6 +1,7 @@
 import java.io.FileReader;
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
@@ -21,6 +22,7 @@ public class PilotsStreamFormatter {
         "^([\\d.]+)([\\s]+)([\\w]+)"
         );
     public static final Pattern logRegex = Pattern.compile(
+        // Did not work. Used split instead...
         "^([\\d]+), ([\\d.]+), ([\\d.]+)"
         );
 
@@ -47,24 +49,20 @@ public class PilotsStreamFormatter {
             }
             System.out.println("#" + String.join(",", hosts));
 
-	    	while ((line = in.readLine()) != null) {
-                Matcher m2 = logRegex.matcher(line);
-                if (m2.find()) {
-                    String data = "";
-                    List<String> values = new ArrayList<String>();
+	    	while (((line = in.readLine()) != null) && (line.indexOf("Ctrl-C") == -1)) {
+                String data = "";
+                String items[] = line.split(", ");
 
-                    Calendar cal = Calendar.getInstance();
-                    cal.setTimeInMillis(Long.parseLong(m2.group(1)));
-                    data += ":" + dateFormat.format(cal.getTime()) + ":";
+                Calendar cal = Calendar.getInstance();
+                cal.setTimeInMillis(Long.parseLong(items[0]));
+                data += ":" + dateFormat.format(cal.getTime()) + ":";
 
-                    for (int i = 2; i <= m2.groupCount(); i++) {
-                        values.add(m2.group(i));
-                    }
-                    data += String.join(",", values);
+                String[] values = Arrays.copyOfRange(items, 1, items.length);
+                data += String.join(",", values);
 
-                    System.out.println(data);
-                }
+                System.out.println(data);
 			}
+
 			in.close(); 
 		} catch (IOException ex) {
 			System.err.println("Error: Can't open the file " + filename + " for reading.");

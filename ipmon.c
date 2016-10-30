@@ -17,16 +17,19 @@
 
 #define CAPTURE_DEVICE  "eth0"
 #define TIMEOUT         1000  /* [ms] */
-#define MAX_HOSTS       32
-#define FILTER_LEN      4096
+#define OUTPUT_INTERVAL 3.0   /* [sec] */
+#define MAX_HOSTS       64
+#define FILTER_LEN      (MAX_HOSTS * 128)
 #define IPADDR_LEN      128
 #define OK              0
 #define ERROR           1
+
 
 typedef struct Host {
     char ip[16];
     char name[64];
     unsigned long recv_bytes;
+    unsigned long total_recv_bytes;
     struct Host *next;
 } Host;
 
@@ -35,24 +38,33 @@ char g_ipaddr[IPADDR_LEN];
 Host g_hosts[MAX_HOSTS];
 map_t g_hosts_map;
 char g_filter[FILTER_LEN];
-struct timeval g_tv_start, g_tv_end;
+struct timeval g_tv_start, g_tv_end, g_tv_last;
+int g_enable_updates = 0;
+double interval_sec = 0;
 
 
 void print_stats(Host *host, double delta_sec) {
     while (host) {
-        double data_rate = (double)host->recv_bytes / delta_sec;
-        printf("%s, %s, %lu, %.3f\n", host->ip, host->name, host->recv_bytes, data_rate);
+        double data_rate = (double)host->total_recv_bytes / delta_sec;
+        printf("%s, %s, %lu, %.3f\n", host->ip, host->name, host->total_recv_bytes, data_rate);
         host = host->next;
     }
+}
+
+
+inline 
+double compute_delta_sec(struct timeval t1, struct timeval t2) {
+    /* assuming t1 >= t2 */
+    return (double)(t1.tv_sec - t2.tv_sec) + (double)(t1.tv_usec - t2.tv_usec) * 1e-6;
 }
 
 
 void sigcatch(int sig)
 {
     gettimeofday(&g_tv_end, NULL);
-    double delta_sec = 
-        (double)(g_tv_end.tv_sec - g_tv_start.tv_sec) + 
-        (double)(g_tv_end.tv_usec - g_tv_start.tv_usec) * 1e-6;
+    double delta_sec = compute_delta_sec(g_tv_end, g_tv_start);
+        /* (double)(g_tv_end.tv_sec - g_tv_start.tv_sec) +  */
+        /* (double)(g_tv_end.tv_usec - g_tv_start.tv_usec) * 1e-6; */
 
     fprintf(stderr, "Catched Ctrl-C signal, elapsed time = %.3f sec, stats:\n\n", delta_sec);
     print_stats(g_hosts, delta_sec);
@@ -72,6 +84,7 @@ void packet_header_test(u_char *args,
 #endif
 
 
+
 void packet_handler(u_char *args,
                     const struct pcap_pkthdr *header,
                     const u_char *packet) {
@@ -88,6 +101,8 @@ void packet_handler(u_char *args,
     Host *host = NULL;
     char *src_ip = NULL;
     int packet_len = 0;
+
+    struct timeval tv_now;
 
 	/* define ethernet header */
 	ethernet = (struct sniff_ethernet*)(packet);
@@ -109,7 +124,29 @@ void packet_handler(u_char *args,
     packet_len = header->len;
     if (hashmap_get(g_hosts_map, src_ip, (void**)&host) == MAP_OK) {
         host->recv_bytes += packet_len;
+        host->total_recv_bytes += host->recv_bytes;
         /* printf("From: %s, %d bytes, total %d bytes\n", src_ip, packet_len, host->recv_bytes); */
+    }
+
+    gettimeofday(&tv_now, NULL);
+    if (g_enable_updates) {
+        double delta_sec = compute_delta_sec(tv_now, g_tv_last);
+        if (OUTPUT_INTERVAL <= delta_sec) {
+            host = g_hosts;
+            printf("%lu, ", (long)(tv_now.tv_sec * 1e3 + tv_now.tv_usec * 1e-3));
+            while (host) {
+                double data_rate = (double)host->recv_bytes / delta_sec;
+                printf("%f", data_rate);
+
+                host->recv_bytes = 0;
+                host = host->next;
+
+                if (host != NULL)
+                    printf(", ");
+            }
+            printf("\n");
+            g_tv_last = tv_now;
+        }
     }
 
     return;
@@ -284,11 +321,16 @@ int main(int argc, char *argv[]) {
     char *dev = CAPTURE_DEVICE;
 	struct bpf_program compiled_filter;
 
+
     if (argc < 2) {
-        fprintf(stderr, "Usage: ./ipmon [hosts file]");
+        fprintf(stderr, "Usage: ./ipmon [hosts file] [update interval in sec]");
         exit(EXIT_FAILURE);
     }
     hosts_file = argv[1];
+    if (3 <= argc) {
+        g_enable_updates = 1;
+        interval_sec = atof(argv[2]);
+    }
 
     /* setup a Ctrl-C signal handler */
     if (SIG_ERR == signal(SIGINT, sigcatch) ) {
@@ -305,7 +347,7 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Fail to initialize hosts from file %s\n", hosts_file);
         exit(EXIT_FAILURE);
     }
-    printf("Started monitoring traffic from the following hosts:\n\n");
+    printf("Started monitoring traffic from the following hosts:\n");
     print_hosts(g_hosts);
     if (create_hosts_map(g_hosts, &g_hosts_map) != OK) {
         fprintf(stderr, "Failed to create hash map\n");
@@ -337,6 +379,7 @@ int main(int argc, char *argv[]) {
 	}
 
     gettimeofday(&g_tv_start, NULL);
+    g_tv_last = g_tv_start;
 
     pcap_loop(handle, 0, packet_handler, NULL);
 
