@@ -323,7 +323,7 @@ int main(int argc, char *argv[]) {
 
 
     if (argc < 2) {
-        fprintf(stderr, "Usage: ./ipmon [hosts file] [update interval in sec]");
+        fprintf(stderr, "Usage: ./ipmon [hosts file] [update interval in sec]\n");
         exit(EXIT_FAILURE);
     }
     hosts_file = argv[1];
