@@ -123,8 +123,8 @@ void packet_handler(u_char *args,
     packet_len = header->len;
     if (hashmap_get(g_hosts_map, src_ip, (void**)&host) == MAP_OK) {
         host->recv_bytes += packet_len;
-        host->total_recv_bytes += host->recv_bytes;
-        /* printf("From: %s, %d bytes, total %d bytes\n", src_ip, packet_len, host->recv_bytes); */
+        host->total_recv_bytes += packet_len;
+        /* printf("From: %s, %d bytes, total %lu bytes\n", src_ip, packet_len, host->total_recv_bytes); */
     }
 
     gettimeofday(&tv_now, NULL);
@@ -208,6 +208,7 @@ int init_hosts(char *hosts_file, Host hosts[]) {
         host->name[namelen] = '\0';
 
         host->recv_bytes = 0;
+        host->total_recv_bytes = 0;
         
         if (prev) prev->next = host;
         prev = host;
