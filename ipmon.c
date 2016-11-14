@@ -17,7 +17,6 @@
 
 #define CAPTURE_DEVICE  "eth0"
 #define TIMEOUT         1000  /* [ms] */
-#define OUTPUT_INTERVAL 3.0   /* [sec] */
 #define MAX_HOSTS       64
 #define FILTER_LEN      (MAX_HOSTS * 128)
 #define IPADDR_LEN      128
@@ -40,7 +39,7 @@ map_t g_hosts_map;
 char g_filter[FILTER_LEN];
 struct timeval g_tv_start, g_tv_end, g_tv_last;
 int g_enable_updates = 0;
-double interval_sec = 0;
+double g_interval_sec = 0;
 
 
 void print_stats(Host *host, double delta_sec) {
@@ -66,7 +65,7 @@ void sigcatch(int sig)
         /* (double)(g_tv_end.tv_sec - g_tv_start.tv_sec) +  */
         /* (double)(g_tv_end.tv_usec - g_tv_start.tv_usec) * 1e-6; */
 
-    fprintf(stderr, "Catched Ctrl-C signal, elapsed time = %.3f sec, stats:\n\n", delta_sec);
+    /* fprintf(stderr, "Catched Ctrl-C signal, elapsed time = %.3f sec, stats:\n\n", delta_sec); */
     print_stats(g_hosts, delta_sec);
 
     hashmap_free(g_hosts_map);
@@ -111,7 +110,7 @@ void packet_handler(u_char *args,
 	ip = (struct sniff_ip*)(packet + SIZE_ETHERNET);
 	size_ip = IP_HL(ip)*4;
 	if (size_ip < 20) {
-		fprintf(stderr, "   * Invalid IP header length: %u bytes\n", size_ip);
+		/* fprintf(stderr, "   * Invalid IP header length: %u bytes\n", size_ip); */
 		return;
 	}
 
@@ -131,7 +130,7 @@ void packet_handler(u_char *args,
     gettimeofday(&tv_now, NULL);
     if (g_enable_updates) {
         double delta_sec = compute_delta_sec(tv_now, g_tv_last);
-        if (OUTPUT_INTERVAL <= delta_sec) {
+        if (g_interval_sec <= delta_sec) {
             host = g_hosts;
             printf("%lu, ", (long)(tv_now.tv_sec * 1e3 + tv_now.tv_usec * 1e-3));
             while (host) {
@@ -329,7 +328,7 @@ int main(int argc, char *argv[]) {
     hosts_file = argv[1];
     if (3 <= argc) {
         g_enable_updates = 1;
-        interval_sec = atof(argv[2]);
+        g_interval_sec = atof(argv[2]);
     }
 
     /* setup a Ctrl-C signal handler */
