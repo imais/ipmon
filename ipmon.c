@@ -1,3 +1,18 @@
+/*
+ * Some part of the code is dervied from the "sniffex.c" released
+ * as follows:
+ ***************************************************************
+ * Sniffer example of TCP/IP packet capture using libpcap.
+ * 
+ * Version 0.1.1 (2005-07-05)
+ * Copyright (c) 2005 The Tcpdump Group
+ *
+ * This software is intended to be used as a practical example and 
+ * demonstration of the libpcap library; available at:
+ * http://www.tcpdump.org/
+ *
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <netinet/in.h>
