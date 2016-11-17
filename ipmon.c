@@ -1,5 +1,5 @@
 /*
- * Some part of the code is dervied from the "sniffex.c" released
+ * Some part of the code is derived from the "sniffex.c" released
  * as follows:
  ***************************************************************
  * Sniffer example of TCP/IP packet capture using libpcap.
