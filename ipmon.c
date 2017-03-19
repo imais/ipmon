@@ -175,6 +175,30 @@ void print_hosts(Host *host) {
 }
 
 
+int host_to_ip(char *host, char *ip)
+{
+    struct hostent *he;
+    struct in_addr **addr_list;
+    int i;
+         
+    if ((he = gethostbyname(host)) == NULL)  {
+        // get the host info
+        herror("gethostbyname");
+        return ERROR;
+    }
+ 
+    addr_list = (struct in_addr **) he->h_addr_list;
+     
+    for(i = 0; addr_list[i] != NULL; i++) {
+        //Return the first one;
+        strcpy(ip , inet_ntoa(*addr_list[i]));
+        return OK;
+    }
+     
+    return ERROR;
+}
+
+
 int init_hosts(char *hosts_file, Host hosts[]) {
     FILE *fp;
     char buffer[128];
@@ -185,8 +209,8 @@ int init_hosts(char *hosts_file, Host hosts[]) {
         return ERROR;
     }
 
-    /* hosts file format: "xxx.xxx.xxx.xxx'\t'hostname'\n'" (as in /etc/hosts) */
-    int i = 0;
+    /* hosts file format: "hostname'\n'" */
+    int i = 0, buflen = 0;
     Host *host = NULL, *prev = NULL;
     while (fgets(buffer, 128, fp) != NULL) {
         if (buffer[0] == '#') {
@@ -195,32 +219,20 @@ int init_hosts(char *hosts_file, Host hosts[]) {
         }
 
         if (MAX_HOSTS <= i) {
-            fprintf(stderr, "init_hosts: Exceeded max hosts %d", i);
+            fprintf(stderr, "init_hosts: Exceeded max hosts %d\n", i);
             status = ERROR;
             goto EXIT;
         }
 
         host = &hosts[i];
-
-        char *delim = index(buffer, '\t');
-        if (delim == NULL) {
-            fprintf(stderr, "init_hosts: Could not find a delimiter from %s", buffer);
+        buflen = strlen(buffer);
+        strncpy(host->name, buffer, buflen - 1);
+        host->name[buflen - 1] = '\0';
+        if (host_to_ip(host->name, host->ip) == ERROR) {
+            fprintf(stderr, "init_hosts: no IP address found for host %s\n", host->name);
             status = ERROR;
             goto EXIT;
         }
-        int iplen = delim - buffer;
-        strncpy(host->ip, buffer, delim - buffer);
-        host->ip[delim - buffer] = '\0';
-
-        char *newline = index(buffer, '\n');
-        if (delim == NULL) {
-            fprintf(stderr, "init_hosts: Could not find a newline from %s", buffer);
-            status = ERROR;
-            goto EXIT;
-        }
-        int namelen = newline - delim - 1;
-        strncpy(host->name, delim + 1, namelen);
-        host->name[namelen] = '\0';
 
         host->recv_bytes = 0;
         host->total_recv_bytes = 0;
