@@ -32,7 +32,7 @@
 
 #define CAPTURE_DEVICE  "eth0"
 #define TIMEOUT         1000  /* [ms] */
-#define MAX_HOSTS       64
+#define MAX_HOSTS       192
 #define FILTER_LEN      (MAX_HOSTS * 128)
 #define IPADDR_LEN      128
 #define OK              0
